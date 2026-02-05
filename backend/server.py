@@ -24,17 +24,24 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # MongoDB connection (with fallback to in-memory storage)
+MEMORY_REPORTS = []
+USE_MONGODB = False
+client = None
+db = None
+
 try:
-    mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
-    client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=2000)
-    db = client[os.environ.get('DB_NAME', 'test_database')]
-    USE_MONGODB = True
-    logger.info("Connected to MongoDB")
+    mongo_url = os.environ.get('MONGO_URL')
+    if mongo_url:
+        client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=10000)
+        db = client[os.environ.get('DB_NAME', 'test_database')]
+        # Test the connection
+        USE_MONGODB = True
+        logger.info("MongoDB client initialized")
+    else:
+        logger.warning("MONGO_URL not set, using in-memory storage")
 except Exception as e:
-    logger.warning(f"MongoDB not available, using in-memory storage: {e}")
+    logger.warning(f"MongoDB initialization failed, using in-memory storage: {e}")
     USE_MONGODB = False
-    # In-memory storage as fallback
-    MEMORY_REPORTS = []
 
 # Create the main app
 app = FastAPI()
@@ -169,7 +176,32 @@ IMPORTANT:
 # Routes
 @api_router.get("/")
 async def root():
-    return {"message": "Medical Report Scanner API", "version": "1.0"}
+    return {
+        "message": "Medical Report Scanner API", 
+        "version": "1.0",
+        "mongodb_connected": USE_MONGODB
+    }
+
+@api_router.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    health_status = {
+        "status": "healthy",
+        "mongodb": "disconnected",
+        "storage": "memory"
+    }
+    
+    if USE_MONGODB and db is not None:
+        try:
+            # Test MongoDB connection
+            await db.command("ping")
+            health_status["mongodb"] = "connected"
+            health_status["storage"] = "mongodb"
+        except Exception as e:
+            logger.error(f"MongoDB ping failed: {e}")
+            health_status["mongodb"] = f"error: {str(e)}"
+    
+    return health_status
 
 @api_router.post("/analyze-report", response_model=AnalyzedReport)
 async def analyze_report(request: ReportAnalysisRequest):
@@ -222,13 +254,19 @@ async def save_report(report: AnalyzedReport):
     try:
         saved_report = SavedReport(report_data=report)
         
-        if USE_MONGODB:
-            report_dict = saved_report.model_dump()
-            report_dict["saved_at"] = report_dict["saved_at"].isoformat()
-            report_dict["report_data"]["created_at"] = report_dict["report_data"]["created_at"].isoformat()
-            await db.reports.insert_one(report_dict)
+        if USE_MONGODB and db is not None:
+            try:
+                report_dict = saved_report.model_dump()
+                report_dict["saved_at"] = report_dict["saved_at"].isoformat()
+                report_dict["report_data"]["created_at"] = report_dict["report_data"]["created_at"].isoformat()
+                await db.reports.insert_one(report_dict)
+                logger.info(f"Report saved to MongoDB: {saved_report.id}")
+            except Exception as db_error:
+                logger.error(f"MongoDB save failed, using memory: {db_error}")
+                MEMORY_REPORTS.append(saved_report)
         else:
             MEMORY_REPORTS.append(saved_report)
+            logger.info(f"Report saved to memory: {saved_report.id}")
         
         return saved_report
     except Exception as e:
@@ -239,19 +277,25 @@ async def save_report(report: AnalyzedReport):
 async def get_reports():
     """Get all saved reports"""
     try:
-        if USE_MONGODB:
-            reports = await db.reports.find().sort("saved_at", -1).to_list(100)
-            result = []
-            for r in reports:
-                r.pop("_id", None)
-                # Convert datetime strings back to datetime objects
-                if isinstance(r.get("saved_at"), str):
-                    r["saved_at"] = datetime.fromisoformat(r["saved_at"])
-                if isinstance(r.get("report_data", {}).get("created_at"), str):
-                    r["report_data"]["created_at"] = datetime.fromisoformat(r["report_data"]["created_at"])
-                result.append(SavedReport(**r))
-            return result
+        if USE_MONGODB and db is not None:
+            try:
+                reports = await db.reports.find().sort("saved_at", -1).to_list(100)
+                result = []
+                for r in reports:
+                    r.pop("_id", None)
+                    # Convert datetime strings back to datetime objects
+                    if isinstance(r.get("saved_at"), str):
+                        r["saved_at"] = datetime.fromisoformat(r["saved_at"])
+                    if isinstance(r.get("report_data", {}).get("created_at"), str):
+                        r["report_data"]["created_at"] = datetime.fromisoformat(r["report_data"]["created_at"])
+                    result.append(SavedReport(**r))
+                logger.info(f"Retrieved {len(result)} reports from MongoDB")
+                return result
+            except Exception as db_error:
+                logger.error(f"MongoDB fetch failed, using memory: {db_error}")
+                return sorted(MEMORY_REPORTS, key=lambda x: x.saved_at, reverse=True)
         else:
+            logger.info(f"Retrieved {len(MEMORY_REPORTS)} reports from memory")
             return sorted(MEMORY_REPORTS, key=lambda x: x.saved_at, reverse=True)
     except Exception as e:
         logger.error(f"Error getting reports: {e}")
