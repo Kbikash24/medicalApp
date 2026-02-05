@@ -88,7 +88,13 @@ export default function HistoryScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await axios.delete(`${BACKEND_URL}/api/reports/${reportId}`);
+              // Use report_data.id which is the actual report ID
+              const report = reports.find(r => r.id === reportId);
+              const actualReportId = report?.report_data?.id || reportId;
+              
+              await axios.delete(`${BACKEND_URL}/api/reports/${actualReportId}`);
+              
+              // Remove from local state
               setReports(reports.filter(r => r.id !== reportId));
               if (selectedReport?.id === reportId) {
                 setSelectedReport(null);
@@ -96,7 +102,7 @@ export default function HistoryScreen() {
               Alert.alert('Success', 'Report deleted successfully.');
             } catch (error) {
               console.error('Error deleting report:', error);
-              Alert.alert('Error', 'Failed to delete report.');
+              Alert.alert('Error', 'Failed to delete report. Please try again.');
             }
           },
         },

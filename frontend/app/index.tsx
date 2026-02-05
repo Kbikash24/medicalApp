@@ -45,6 +45,7 @@ interface AnalyzedReport {
 export default function HomeScreen() {
   const router = useRouter();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [analyzedReport, setAnalyzedReport] = useState<AnalyzedReport | null>(null);
   const [showHindi, setShowHindi] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -126,14 +127,28 @@ export default function HomeScreen() {
   };
 
   const saveReport = async () => {
-    if (!analyzedReport) return;
+    if (!analyzedReport || isSaving) return;
 
+    setIsSaving(true);
     try {
       await axios.post(`${BACKEND_URL}/api/save-report`, analyzedReport);
-      Alert.alert('Success', 'Report saved successfully!', [{ text: 'OK' }]);
+      Alert.alert(
+        'Success', 
+        'Report saved successfully!', 
+        [
+          { 
+            text: 'OK', 
+            onPress: () => {
+              router.push('/history');
+            }
+          }
+        ]
+      );
     } catch (error) {
       console.error('Error saving report:', error);
       Alert.alert('Error', 'Failed to save report. Please try again.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -342,8 +357,16 @@ export default function HomeScreen() {
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.resultTitle}>{analyzedReport?.title}</Text>
-        <TouchableOpacity style={styles.saveButton} onPress={saveReport}>
-          <Ionicons name="bookmark-outline" size={24} color="#fff" />
+        <TouchableOpacity 
+          style={styles.saveButton} 
+          onPress={saveReport}
+          disabled={isSaving}
+        >
+          {isSaving ? (
+            <ActivityIndicator size=\"small\" color=\"#fff\" />
+          ) : (
+            <Ionicons name=\"bookmark-outline\" size={24} color=\"#fff\" />
+          )}
         </TouchableOpacity>
       </View>
 
@@ -443,10 +466,18 @@ export default function HomeScreen() {
 
       {/* Action Buttons */}
       <View style={styles.actionButtons}>
-        <TouchableOpacity style={styles.actionButton} onPress={saveReport}>
-          <Ionicons name="save" size={20} color="#fff" />
+        <TouchableOpacity 
+          style={[styles.actionButton, isSaving && styles.actionButtonDisabled]} 
+          onPress={saveReport}
+          disabled={isSaving}
+        >
+          {isSaving ? (
+            <ActivityIndicator size=\"small\" color=\"#fff\" />
+          ) : (
+            <Ionicons name=\"save\" size={20} color=\"#fff\" />
+          )}
           <Text style={styles.actionButtonText}>
-            {showHindi ? 'रिपोर्ट सहेजें' : 'Save Report'}
+            {isSaving ? (showHindi ? 'सहेज रहे हैं...' : 'Saving...') : (showHindi ? 'रिपोर्ट सहेजें' : 'Save Report')}
           </Text>
         </TouchableOpacity>
         
@@ -876,6 +907,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     gap: 8,
+  },
+  actionButtonDisabled: {
+    opacity: 0.6,
   },
   actionButtonSecondary: {
     backgroundColor: 'transparent',

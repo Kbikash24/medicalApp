@@ -330,19 +330,37 @@ async def get_report(report_id: str):
 async def delete_report(report_id: str):
     """Delete a report by ID"""
     try:
-        if USE_MONGODB:
-            result = await db.reports.delete_one({"id": report_id})
-            if result.deleted_count == 0:
+        if USE_MONGODB and db is not None:
+            try:
+                # Try to delete by SavedReport.id first
+                result = await db.reports.delete_one({"id": report_id})
+                if result.deleted_count == 0:
+                    # Try by report_data.id as fallback
+                    result = await db.reports.delete_one({"report_data.id": report_id})
+                    if result.deleted_count == 0:
+                        raise HTTPException(status_code=404, detail="Report not found")
+                logger.info(f"Deleted report: {report_id}")
+                return {"message": "Report deleted successfully"}
+            except Exception as db_error:
+                logger.error(f"MongoDB delete failed: {db_error}")
+                # Try memory fallback
+                for i, report in enumerate(MEMORY_REPORTS):
+                    if report.id == report_id or report.report_data.id == report_id:
+                        MEMORY_REPORTS.pop(i)
+                        return {"message": "Report deleted successfully"}
                 raise HTTPException(status_code=404, detail="Report not found")
         else:
             for i, report in enumerate(MEMORY_REPORTS):
-                if report.id == report_id:
+                if report.id == report_id or report.report_data.id == report_id:
                     MEMORY_REPORTS.pop(i)
+                    logger.info(f"Deleted report from memory: {report_id}")
                     return {"message": "Report deleted successfully"}
             raise HTTPException(status_code=404, detail="Report not found")
-        return {"message": "Report deleted successfully"}
     except HTTPException:
         raise
+    except Exception as e:
+        logger.error(f"Error deleting report: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"Error deleting report: {e}")
         raise HTTPException(status_code=500, detail=str(e))
