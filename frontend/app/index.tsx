@@ -363,9 +363,9 @@ export default function HomeScreen() {
           disabled={isSaving}
         >
           {isSaving ? (
-            <ActivityIndicator size=\"small\" color=\"#fff\" />
+            <ActivityIndicator size="small" color="#fff" />
           ) : (
-            <Ionicons name=\"bookmark-outline\" size={24} color=\"#fff\" />
+            <Ionicons name="bookmark-outline" size={24} color="#fff" />
           )}
         </TouchableOpacity>
       </View>
@@ -472,9 +472,9 @@ export default function HomeScreen() {
           disabled={isSaving}
         >
           {isSaving ? (
-            <ActivityIndicator size=\"small\" color=\"#fff\" />
+            <ActivityIndicator size="small" color="#fff" />
           ) : (
-            <Ionicons name=\"save\" size={20} color=\"#fff\" />
+            <Ionicons name="save" size={20} color="#fff" />
           )}
           <Text style={styles.actionButtonText}>
             {isSaving ? (showHindi ? 'सहेज रहे हैं...' : 'Saving...') : (showHindi ? 'रिपोर्ट सहेजें' : 'Save Report')}
