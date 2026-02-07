@@ -66,6 +66,9 @@ export default function HomeScreen() {
   };
 
   const pickImage = async (useCamera: boolean) => {
+    // Prevent picking while already analyzing
+    if (isAnalyzing) return;
+    
     const hasPermission = await requestPermissions();
     if (!hasPermission) return;
 
@@ -89,19 +92,26 @@ export default function HomeScreen() {
 
       if (!result.canceled && result.assets[0].base64) {
         setSelectedImage(result.assets[0].base64);
+        // Set loading state first to ensure UI updates before API call
+        setIsAnalyzing(true);
+        setAnalyzedReport(null);
+        // Small delay to ensure state update is reflected in UI
+        await new Promise(resolve => setTimeout(resolve, 100));
         await analyzeReport(result.assets[0].base64);
       }
     } catch (error) {
       console.error('Error picking image:', error);
       Alert.alert('Error', 'Failed to pick image. Please try again.');
+      setIsAnalyzing(false);
     }
   };
 
   const analyzeReport = async (imageBase64: string) => {
-    setIsAnalyzing(true);
-    setAnalyzedReport(null);
 
     try {
+      console.log('Backend URL:', BACKEND_URL);
+      console.log('Sending analysis request...');
+      
       const response = await axios.post(
         `${BACKEND_URL}/api/analyze-report`,
         {
@@ -113,12 +123,28 @@ export default function HomeScreen() {
         }
       );
 
+      console.log('Analysis successful');
       setAnalyzedReport(response.data);
     } catch (error: any) {
       console.error('Error analyzing report:', error);
+      
+      let errorMessage = 'Failed to analyze the report. Please try again.';
+      
+      if (error.code === 'ECONNABORTED') {
+        errorMessage = 'Request timeout. Please check your internet connection and try again.';
+      } else if (error.code === 'ERR_NETWORK') {
+        errorMessage = 'Network error. Please check your internet connection.';
+      } else if (!BACKEND_URL) {
+        errorMessage = 'Backend URL is not configured. Please contact support.';
+      } else if (error.response) {
+        errorMessage = error.response.data?.detail || `Server error: ${error.response.status}`;
+      } else if (error.request) {
+        errorMessage = 'Cannot reach the server. Please check your internet connection.';
+      }
+      
       Alert.alert(
         'Analysis Failed',
-        error.response?.data?.detail || 'Failed to analyze the report. Please try again.',
+        errorMessage,
         [{ text: 'OK' }]
       );
     } finally {
@@ -227,11 +253,16 @@ export default function HomeScreen() {
         </Text>
         
         <TouchableOpacity
-          style={styles.scanButton}
+          style={[styles.scanButton, isAnalyzing && styles.scanButtonDisabled]}
           onPress={() => pickImage(true)}
+          disabled={isAnalyzing}
         >
           <View style={styles.scanButtonIcon}>
-            <Ionicons name="camera" size={32} color="#fff" />
+            {isAnalyzing ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="camera" size={32} color="#fff" />
+            )}
           </View>
           <View style={styles.scanButtonText}>
             <Text style={styles.scanButtonTitle}>
@@ -245,11 +276,16 @@ export default function HomeScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.scanButton}
+          style={[styles.scanButton, isAnalyzing && styles.scanButtonDisabled]}
           onPress={() => pickImage(false)}
+          disabled={isAnalyzing}
         >
           <View style={[styles.scanButtonIcon, { backgroundColor: '#8b5cf6' }]}>
-            <Ionicons name="images" size={32} color="#fff" />
+            {isAnalyzing ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="images" size={32} color="#fff" />
+            )}
           </View>
           <View style={styles.scanButtonText}>
             <Text style={styles.scanButtonTitle}>
@@ -602,6 +638,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
+  },
+  scanButtonDisabled: {
+    opacity: 0.5,
   },
   scanButtonIcon: {
     width: 56,
